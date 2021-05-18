@@ -1,111 +1,78 @@
-import random
-from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import  expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.chrome.options import Options
-from datetime import datetime
+
 #Importar librería para usar mongo
 from pymongo import MongoClient
 
 #Ubicación del servidor de Mongo
 client = MongoClient('localhost')
 #La base de datos que queremos utilizar, si no existe se crea
-db = client['datos_climaticos']
+db = client['anuncios']
 #Lo que queremos guardar va dentro de una colección
-col = db['inamhi']
+col = db['olxmercado']
 
-ciudades = [
-    ["Tulcan", "Carchi"],
-    ["Ibarra","Imbabura"],
-    ["Quito", "Pichincha"],
-    ["Latacunga", "Cotopaxi"],
-    ["Ambato", "Tungurahua"],
-    ["Guaranda", "Bolivar"],
-    ["Riobamba", "Chimborazo"],
-    ["Azogues", "Cañar"],
-    ["Cuenca", "Azuay"],
-    ["Loja", "Ecuador"]
-]
+#Instancia del driver de Google Chrome
+driver = webdriver.Chrome('./chromedriver')
 
-opts = Options()
-opts.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/71.0.3578.80 Chrome/71.0.3578.80 Safari/537.36")
+#Abrir la página donde quiero hacer scrapy
+driver.get('https://www.olx.com.ec/items/q-abono')
 
-driver = webdriver.Chrome('./chromedriver.exe')
-
-for ciudad in ciudades:
-
-    # Url Semilla de Inamhi
-    driver.get("http://186.42.174.241/InamhiPronostico/")
-
-
-    print("**************************************", ciudad[0], "**************************************")
-    # Espera hasta que cargue la página
-    sleep(random.uniform(6.0, 7.0))
-
-    # Espera hasta que cargue el bloque de ingreso de ubicación
-    input_lugar = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, '//input[@id="addr"]'))
-    )
-
+for i in range(4):
     try:
-        # Ciudad a buscar
-        # lugar = "Cayambe, Pichincha, Ecuador"
-        lugar = ciudad[0] + ", " + ciudad[-1]
-        print("Busqueda: ", lugar)
+        #Espera por eventos
+        #Va a esperar hasta 10s que el XPATH se encuentre lleno
+        boton = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, '//button[@data-aut-id="btnLoadMore"]'))
+        )
 
-        # Debido a que por defecto el campo de lugar se encuentra lleno con "Quito"
-        # Debemos borrarlo antes de colocar el nuevo
-        input_lugar.clear()
-
-        # Insertamos el lugar en el campo de texto
-        input_lugar.send_keys(lugar)
-
-        # Boton para iniciar la búsqueda
-        boton = driver.find_element(By.XPATH, '//button[@value="buscar"]')
-        # Le damos en buscar
         boton.click()
 
-        # Se demora en mostrar un listado de posibles ubicaciones así que esperamos
-        sleep(random.uniform(3.0, 4.0))
+        #Tengo que esperar que la información nueva se cargue
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(By.XPATH, '//li[@data-aut-id="itemBox"]//span[@data-aut-id="itemPrice"]')
+        )
 
-        # Enlace para seleccionar la ubicación
-        enlace = driver.find_element(By.XPATH, '//ul[@class="my-new-list"]/li[1]/a')
-        # Le damos en buscar
-        enlace.click()
+    except  Exception as e:
+        print(e)
+        continue #Rompe las iteracciones
 
-        # Espera de carga de los nuevos datos
-        sleep(random.uniform(2.0, 3.0))
+#Encontrar todos los items
+#Todos los aununcios en una lista
+anuncios = driver.find_elements_by_xpath('//li[@data-aut-id="itemBox"]')
 
-        # Cambio de contexto dentro del HTML
-        driver.switch_to.frame(driver.find_element_by_xpath('//object'))
-        hora = driver.find_element_by_xpath('//div[@class="col-xs-12 text-center fechaActual"]').text
-        temperatura = driver.find_element_by_xpath('//div[@class="text-center temperaturaActual"]').text
-        lluvia = driver.find_element_by_xpath('//table/tbody/tr[2]/td/span[2]').text
-        humedad = driver.find_element_by_xpath('//table/tbody/tr[3]/td/span[2]').text
+#Extracción de cada uno de los elementos de la lista
+for anuncio in anuncios:
+    try:
+        precio = anuncio.find_element_by_xpath('.//span[@data-aut-id="itemPrice"]').text
+        #print(precio)
+        titulo = anuncio.find_element_by_xpath('.//span[@data-aut-id="itemTitle"]').text
+        #print(titulo)
+        ubicacion_completa = anuncio.find_element_by_xpath('.//span[@data-aut-id="item-location"]').text
+        ubicacion = ubicacion_completa.split(",")[-1]
+        #print(ubicacion)
 
-        fechaObjeto = datetime.now()
-        fechaTexto = fechaObjeto.strftime('%d/%m/%Y')
-
-        print("********************************")
-        print("Hora: ", hora)
-        print("Fecha: ", fechaTexto)
-        print("Temperatura: ", temperatura)
-        print("Lluvia: ", lluvia)
-        print("Humedad: ", humedad)
-
-        # Insertando datos en mongo
-
+        #Insertando como que son los primeros datos
+        '''
         col.insert_one({
-            'hora': hora,
-            'fecha': fechaTexto,
-            'temperatura': temperatura,
-            'lluvia': lluvia,
-            'humedad': humedad,
-            'provincia': ciudad[-1],
-            'ciudad': ciudad[0]
-        })
+            'titulo': titulo.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip(),
+            'precio': precio.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip(),
+            'origen': "olx"
+        })'''
+        #Actualizando los datos
+        col.update_one({
+            "titulo": titulo.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip()
+        },{
+            "$set": {
+                "titulo": titulo.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip(),
+                "precio": precio.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip(),
+                "ubicacion": ubicacion.replace("$", "").replace('\n', '').replace('\r', '').replace('\t', '').strip(),
+                "vendidos": "0",
+                "origen": "olx"
+            }
+
+        }, upsert=True)
+
     except:
-        print("No ha podido encontrar la búsqueda de: ", lugar)
         continue
